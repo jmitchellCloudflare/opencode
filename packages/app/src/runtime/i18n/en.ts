@@ -496,6 +496,10 @@ export const dict = {
   "error.chain.configInvalidWithMessage": "Config file at {{path}} is invalid: {{message}}",
 
   "notification.permission.title": "Permission required",
+  "notification.permission.rule.config": "Matched rule: {{action}} “{{resource}}” → {{effect}}",
+  "notification.permission.rule.saved": "Saved approval: {{action}} “{{resource}}”",
+  "notification.permission.rule.default": "No rule matched (default: ask)",
+  "notification.permission.ask.label": "Requires approval:",
 
   "notification.session.responseReady.title": "Response ready",
   "notification.session.error.title": "Session error",

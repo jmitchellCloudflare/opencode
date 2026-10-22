@@ -281,6 +281,120 @@ describe("Permission", () => {
     }),
   )
 
+  it.effect("classifies each resource as configured allow, saved approval, or ask", () =>
+    Effect.gen(function* () {
+      yield* setup([
+        { action: "shell", resource: "*", effect: "ask" },
+        { action: "shell", resource: "git status", effect: "allow" },
+      ])
+      const saved = yield* PermissionSaved.Service
+      yield* saved.add({ projectID: Project.ID.global, action: "shell", resources: ["git status", "pwd"] })
+
+      const { service, fiber, request } = yield* waitForRequest({
+        action: "shell",
+        resources: ["git status", "pwd", "rm build"],
+      })
+      expect(request.resourceResults?.map((result) => result.effect)).toEqual(["allow", "saved", "ask"])
+      expect((yield* service.get(request.id))?.resourceResults?.map((result) => result.effect)).toEqual([
+        "allow",
+        "saved",
+        "ask",
+      ])
+
+      yield* service.reply({ requestID: request.id, reply: "once" })
+      yield* Fiber.join(fiber)
+    }),
+  )
+
+  it.effect("does not prompt when every resource is configured allow or saved", () =>
+    Effect.gen(function* () {
+      yield* setup([
+        { action: "shell", resource: "*", effect: "ask" },
+        { action: "shell", resource: "git status", effect: "allow" },
+      ])
+      const saved = yield* PermissionSaved.Service
+      yield* saved.add({ projectID: Project.ID.global, action: "shell", resources: ["pwd"] })
+
+      const service = yield* Permission.Service
+      expect(yield* service.ask(assertion({ action: "shell", resources: ["git status", "pwd"] }))).toEqual({
+        id: Permission.ID.create("per_test"),
+        effect: "allow",
+      })
+      expect(yield* service.list()).toEqual([])
+    }),
+  )
+
+  it.effect("reports the rule that matched each resource and where it came from", () =>
+    Effect.gen(function* () {
+      yield* setup([
+        { action: "shell", resource: "git *", effect: "ask" },
+        { action: "shell", resource: "git status", effect: "allow" },
+      ])
+      const saved = yield* PermissionSaved.Service
+      yield* saved.add({ projectID: Project.ID.global, action: "shell", resources: ["git status", "pwd"] })
+
+      const { service, fiber, request } = yield* waitForRequest({
+        action: "shell",
+        resources: ["git status", "pwd", "git push", "touch x"],
+      })
+      const expected: Permission.Request["resourceResults"] = [
+        {
+          resource: "git status",
+          effect: "allow",
+          rule: { action: "shell", resource: "git status", effect: "allow", origin: "config" },
+        },
+        {
+          resource: "pwd",
+          effect: "saved",
+          rule: { action: "shell", resource: "pwd", effect: "allow", origin: "saved" },
+        },
+        {
+          resource: "git push",
+          effect: "ask",
+          rule: { action: "shell", resource: "git *", effect: "ask", origin: "config" },
+        },
+        {
+          resource: "touch x",
+          effect: "ask",
+          rule: { action: "shell", resource: "*", effect: "ask", origin: "default" },
+        },
+      ]
+      expect(request.resourceResults).toEqual(expected)
+      expect(yield* service.get(request.id)).toMatchObject({ resourceResults: expected })
+
+      yield* service.reply({ requestID: request.id, reply: "once" })
+      yield* Fiber.join(fiber)
+    }),
+  )
+
+  it.effect("prefers a saved approval over a configured ask rule for the reported rule", () =>
+    Effect.gen(function* () {
+      yield* setup([{ action: "shell", resource: "*", effect: "ask" }])
+      const saved = yield* PermissionSaved.Service
+      yield* saved.add({ projectID: Project.ID.global, action: "shell", resources: ["pwd"] })
+
+      const { service, fiber, request } = yield* waitForRequest({
+        action: "shell",
+        resources: ["pwd", "touch x"],
+      })
+      expect(request.resourceResults).toEqual([
+        {
+          resource: "pwd",
+          effect: "saved",
+          rule: { action: "shell", resource: "pwd", effect: "allow", origin: "saved" },
+        },
+        {
+          resource: "touch x",
+          effect: "ask",
+          rule: { action: "shell", resource: "*", effect: "ask", origin: "config" },
+        },
+      ])
+
+      yield* service.reply({ requestID: request.id, reply: "once" })
+      yield* Fiber.join(fiber)
+    }),
+  )
+
   it.effect("resolves an asked permission once", () =>
     Effect.gen(function* () {
       yield* setup()
