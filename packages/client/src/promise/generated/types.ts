@@ -242,6 +242,10 @@ export type ProjectTime = { created: number; updated: number; active: number; ar
 
 export type PermissionID = string
 
+export type PermissionResourceEffect = "allow" | "saved" | "ask"
+
+export type PermissionRuleOrigin = "config" | "saved" | "default"
+
 export type PermissionSource = { type: "tool"; messageID: string; id: string }
 
 export type PermissionSavedID = string
@@ -717,15 +721,11 @@ export type Project = {
   sandboxes: Array<string>
 }
 
-export type PermissionRequest = {
-  id: PermissionID
-  sessionID: SessionID
+export type PermissionResourceRule = {
   action: string
-  resources: Array<string>
-  save?: Array<string>
-  metadata?: { [x: string]: JsonValue }
-  source?: PermissionSource
-  message?: string
+  resource: string
+  effect: PermissionEffect
+  origin: PermissionRuleOrigin
 }
 
 export type PermissionSavedInfo = {
@@ -1551,24 +1551,6 @@ export type ReferenceUpdated = {
   data: {}
 }
 
-export type PermissionAsked = {
-  id: EventID
-  created: number
-  metadata?: { [x: string]: any }
-  type: "permission.asked"
-  location?: LocationRef
-  data: {
-    id: PermissionID
-    sessionID: SessionID
-    action: string
-    resources: Array<string>
-    save?: Array<string>
-    metadata?: { [x: string]: any }
-    source?: PermissionSource
-    message?: string
-  }
-}
-
 export type PermissionReplied = {
   id: EventID
   created: number
@@ -1933,6 +1915,12 @@ export type ProviderInfo = {
 }
 
 export type ConnectionInfo = ConnectionCredentialInfo | ConnectionEnvInfo
+
+export type PermissionResourceResult = {
+  resource: string
+  effect: PermissionResourceEffect
+  rule: PermissionResourceRule
+}
 
 export type PtyCreated = {
   id: EventID
@@ -2362,6 +2350,37 @@ export type SessionMessageAssistantTool1 = {
 export type FormFields = [FormField, ...Array<FormField>]
 
 export type CredentialValue = CredentialOAuth | CredentialKey | CredentialExternal
+
+export type PermissionRequest = {
+  id: PermissionID
+  sessionID: SessionID
+  action: string
+  resources: Array<string>
+  resourceResults?: Array<PermissionResourceResult>
+  save?: Array<string>
+  metadata?: { [x: string]: JsonValue }
+  source?: PermissionSource
+  message?: string
+}
+
+export type PermissionAsked = {
+  id: EventID
+  created: number
+  metadata?: { [x: string]: any }
+  type: "permission.asked"
+  location?: LocationRef
+  data: {
+    id: PermissionID
+    sessionID: SessionID
+    action: string
+    resources: Array<string>
+    resourceResults?: Array<PermissionResourceResult>
+    save?: Array<string>
+    metadata?: { [x: string]: any }
+    source?: PermissionSource
+    message?: string
+  }
+}
 
 export type FormFields2 = [FormField1, ...Array<FormField1>]
 

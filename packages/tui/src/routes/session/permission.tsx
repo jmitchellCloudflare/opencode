@@ -1,7 +1,7 @@
 import { createStore } from "solid-js/store"
 import { createMemo, For, Match, Show, Switch } from "solid-js"
 import { Portal, useRenderer, useTerminalDimensions, type JSX } from "@opentui/solid"
-import type { TextareaRenderable } from "@opentui/core"
+import { TextAttributes, type TextareaRenderable } from "@opentui/core"
 import { useTheme, useThemes } from "../../context/theme"
 import type { PermissionReply, PermissionRequest } from "@opencode/client"
 import { SplitBorder } from "../../ui/border"
@@ -159,12 +159,24 @@ export function PermissionPrompt(props: { request: PermissionRequest; directory?
             {
               action: props.request.action,
               resources: props.request.resources,
+              resourceResults: props.request.resourceResults,
               metadata: props.request.metadata,
               input: source().input,
               toolMetadata: source().metadata,
             },
             pathFormatter.format,
           )
+          const lineColor = (index: number) => {
+            const effect = current.lineEffects?.[index]
+            if (effect === "allow") return theme.text.feedback.success.base
+            if (effect === "ask") return theme.text.feedback.warning.base
+            if (effect === "saved") return theme.text.feedback.info.base
+            return props.request.action === "shell" ||
+              props.request.action === "subagent" ||
+              props.request.action === "task"
+              ? theme.text.base
+              : theme.text.muted
+          }
           const presentationBody = () =>
             props.request.action === "edit" ? (
               <EditBody file={current.file} diff={current.diff} patch={current.patch} />
@@ -180,15 +192,10 @@ export function PermissionPrompt(props: { request: PermissionRequest; directory?
             ) : (
               <box paddingLeft={1}>
                 <For each={current.lines}>
-                  {(line) => (
+                  {(line, index) => (
                     <text
-                      fg={
-                        props.request.action === "shell" ||
-                        props.request.action === "subagent" ||
-                        props.request.action === "task"
-                          ? theme.text.base
-                          : theme.text.muted
-                      }
+                      fg={lineColor(index())}
+                      attributes={current.lineEffects?.[index()] === "ask" ? TextAttributes.BOLD : undefined}
                     >
                       {line}
                     </text>

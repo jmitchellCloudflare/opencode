@@ -84,16 +84,28 @@ export class NotFoundError extends Schema.TaggedError<NotFoundError>()("Permissi
 
 export type Error = BlockedError | CorrectedError
 
+function find(action: string, resource: string, ...rulesets: Permission.Ruleset[]): Permission.Rule | undefined {
+  return rulesets
+    .flat()
+    .findLast((rule) => Wildcard.match(action, rule.action) && Wildcard.match(resource, rule.resource))
+}
+
 export function evaluate(action: string, resource: string, ...rulesets: Permission.Ruleset[]): Permission.Rule {
-  return (
-    rulesets
-      .flat()
-      .findLast((rule) => Wildcard.match(action, rule.action) && Wildcard.match(resource, rule.resource)) ?? {
-      action,
-      resource: "*",
-      effect: "ask",
-    }
-  )
+  return find(action, resource, ...rulesets) ?? { action, resource: "*", effect: "ask" }
+}
+
+function classify(
+  action: string,
+  resource: string,
+  configured: Permission.Ruleset,
+  saved: Permission.Ruleset,
+): Permission.ResourceResult {
+  const config = find(action, resource, configured)
+  if (config?.effect === "allow") return { resource, effect: "allow", rule: { ...config, origin: "config" } }
+  const approval = find(action, resource, saved)
+  if (approval) return { resource, effect: "saved", rule: { ...approval, origin: "saved" } }
+  if (config) return { resource, effect: "ask", rule: { ...config, origin: "config" } }
+  return { resource, effect: "ask", rule: { action, resource: "*", effect: "ask", origin: "default" } }
 }
 
 export function merge(...rulesets: Permission.Ruleset[]): Permission.Ruleset {
@@ -173,9 +185,10 @@ const layer = Layer.effect(
     const evaluateInput = Effect.fnUntraced(function* (input: AssertInput) {
       const rules = yield* configured(input.sessionID, input.agent)
       if (denied(input, rules)) return { effect: "deny" as const, rules }
-      const all = [...rules, ...(yield* savedRules())]
-      const effects = input.resources.map((resource) => evaluate(input.action, resource, all).effect)
-      const effect: Permission.Effect = effects.includes("ask") ? "ask" : "allow"
+      const saved = yield* savedRules()
+      const all = [...rules, ...saved]
+      const resourceResults = input.resources.map((resource) => classify(input.action, resource, rules, saved))
+      const effect: Permission.Effect = resourceResults.some((item) => item.effect === "ask") ? "ask" : "allow"
       const event = yield* hooks.trigger("permission", "evaluate", {
         sessionID: input.sessionID,
         agent: input.agent,
@@ -185,15 +198,26 @@ const layer = Layer.effect(
         source: input.source,
         effect,
       })
-      return { effect: event.effect, message: event.message, rules: all }
+      return { effect: event.effect, message: event.message, rules: all, resourceResults }
     })
 
-    function request(input: AssertInput, message?: string): Request {
+    function request(
+      input: AssertInput,
+      message?: string,
+      resourceResults?: ReadonlyArray<Permission.ResourceResult>,
+    ): Request {
+      // evaluateInput builds resourceResults from input.resources via one map(), so the lengths
+      // can only differ if a future change to that logic drops or duplicates an entry.
+      if (resourceResults !== undefined && resourceResults.length !== input.resources.length)
+        throw new Error(
+          `resourceResults must have one entry per resource (${resourceResults.length} vs ${input.resources.length})`,
+        )
       return {
         id: input.id ?? ID.create(),
         sessionID: input.sessionID,
         action: input.action,
         resources: input.resources,
+        resourceResults,
         save: input.save,
         metadata: input.metadata,
         source: input.source,
@@ -223,7 +247,7 @@ const layer = Layer.effect(
     const ask = Effect.fn("Permission.ask")(function* (input: AssertInput) {
       if (closed) return { id: input.id ?? ID.create(), effect: "deny" as const }
       const result = yield* evaluateInput(input)
-      const value = request(input, result.message)
+      const value = request(input, result.message, result.resourceResults)
       if (result.effect === "ask") yield* create(value, input.agent)
       return { id: value.id, effect: result.effect }
     })
@@ -243,7 +267,7 @@ const layer = Layer.effect(
               })
             }
             if (result.effect === "allow") return
-            const item = yield* create(request(input, result.message), input.agent)
+            const item = yield* create(request(input, result.message, result.resourceResults), input.agent)
             return yield* restore(Deferred.await(item.deferred)).pipe(
               // Deliberate defect tunnel: leaves wrap execution in blanket `mapError`, which
               // must not convert a user's decline into model-facing tool output. The decline

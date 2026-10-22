@@ -1,3 +1,4 @@
+import type { PermissionResourceEffect, PermissionResourceResult } from "@opencode/client"
 import { Locale } from "./locale"
 import { canonicalToolName, finiteNumber, webSearchProviderLabel } from "./tool-display"
 
@@ -7,6 +8,7 @@ export type PermissionPresentation = {
   icon: string
   title: string
   lines: string[]
+  lineEffects?: ReadonlyArray<PermissionResourceEffect | undefined>
   diff?: string
   patch?: string
   file?: string
@@ -15,6 +17,7 @@ export type PermissionPresentation = {
 export type PermissionPresentationInput = {
   action: string
   resources: ReadonlyArray<unknown>
+  resourceResults?: ReadonlyArray<PermissionResourceResult>
   metadata?: unknown
   input?: unknown
   toolMetadata?: unknown
@@ -65,6 +68,19 @@ export function permissionPresentation(
 
   if (action === "shell") {
     const command = text(input.command)
+    const results = source.resourceResults
+    if (results && results.length > 0) {
+      const breakdown = results.map((result) => `${result.effect === "ask" ? "⚠" : "-"} ${result.resource}`)
+      const breakdownEffects = results.map((result) => result.effect)
+      return {
+        icon: "#",
+        title: "Shell command",
+        // The full command keeps operators (&&, |, redirects) visible; the breakdown below shows
+        // which part of it triggered the prompt. Its own line has no effect, so it stays undyed.
+        lines: command ? [`$ ${command}`, ...breakdown] : breakdown,
+        lineEffects: command ? [undefined, ...breakdownEffects] : breakdownEffects,
+      }
+    }
     return {
       icon: "#",
       title: "Shell command",

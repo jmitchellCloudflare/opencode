@@ -23,10 +23,39 @@ export const Source = Schema.Union([
 ]).annotate({ identifier: "Permission.Source" })
 export type Source = typeof Source.Type
 
+export const Effect = Schema.Literals(["allow", "deny", "ask"]).annotate({ identifier: "Permission.Effect" })
+export type Effect = typeof Effect.Type
+
+export const ResourceEffect = Schema.Literals(["allow", "saved", "ask"]).annotate({
+  identifier: "Permission.ResourceEffect",
+})
+export type ResourceEffect = typeof ResourceEffect.Type
+
+export const RuleOrigin = Schema.Literals(["config", "saved", "default"]).annotate({
+  identifier: "Permission.RuleOrigin",
+})
+export type RuleOrigin = typeof RuleOrigin.Type
+
+export const ResourceRule = Schema.Struct({
+  action: Schema.String,
+  resource: Schema.String,
+  effect: Effect,
+  origin: RuleOrigin,
+}).annotate({ identifier: "Permission.ResourceRule" })
+export interface ResourceRule extends Schema.Schema.Type<typeof ResourceRule> {}
+
+export const ResourceResult = Schema.Struct({
+  resource: Schema.String,
+  effect: ResourceEffect,
+  rule: ResourceRule,
+}).annotate({ identifier: "Permission.ResourceResult" })
+export interface ResourceResult extends Schema.Schema.Type<typeof ResourceResult> {}
+
 const RequestFields = {
   sessionID: SessionID,
   action: Schema.String,
   resources: Schema.Array(Schema.String),
+  resourceResults: Schema.Array(ResourceResult).pipe(optional),
   save: Schema.Array(Schema.String).pipe(optional),
   metadata: Schema.Record(Schema.String, Schema.Unknown).pipe(optional),
   source: Source.pipe(optional),
@@ -52,9 +81,6 @@ const Replied = ephemeral({
   },
 })
 export const Event = { Asked, Replied, Definitions: inventory(Asked, Replied) }
-
-export const Effect = Schema.Literals(["allow", "deny", "ask"]).annotate({ identifier: "Permission.Effect" })
-export type Effect = typeof Effect.Type
 
 export interface Rule extends Schema.Schema.Type<typeof Rule> {}
 export const Rule = Schema.Struct({
